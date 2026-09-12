@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"log"
@@ -110,12 +111,24 @@ func parseID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 // writeJSON serialises v as JSON and writes it with the given status code.
-// Encoding errors are logged; the status line has already been sent so there
-// is no way to change it, but we surface the problem in the logs.
+//
+// The value is marshalled into an in-memory buffer BEFORE the status line is
+// written. This way, if encoding fails we can still emit a clean 500 with no
+// body already on the wire — as opposed to WriteHeader(status)+Encode, which
+// would commit the status code and then leave a truncated/partial body when
+// Encode fails midway (e.g. an unsupported type in a large collection).
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
+		log.Printf("writeJSON: encode error: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("writeJSON: encode error: %v", err)
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		// Header + body already committed; nothing to do but log.
+		log.Printf("writeJSON: write error: %v", err)
 	}
 }
