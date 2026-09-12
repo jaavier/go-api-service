@@ -1,0 +1,32 @@
+{
+  "mission": "ux-review-flow",
+  "agent": "reviewer-auto",
+  "owner": "jaavier",
+  "repo": "go-api-service",
+  "pr": 1,
+  "head_sha": "814a9a332be66ce789d5742dab7caabea309c69f",
+  "review_url": "https://github.com/jaavier/go-api-service/pull/1#pullrequestreview-5188492223",
+  "verdict": "findings",
+  "blocking_findings": [
+    {
+      "category": "concurrency",
+      "file": "internal/worker/processor_test.go",
+      "symbol": "TestRun",
+      "line": 103,
+      "summary": "Data race: `received` slice escrito desde la goroutine de Run sin sincronizacion; solo hay happens-before via close(done) en la 3a iteracion. `go test -race` (declarado obligatorio en el checklist del PR) lo marca.",
+      "suggested_fix": "Proteger `received` con sync.Mutex, o que handle empuje a un canal bufferizado y el test recolecte desde ahi, esperando el *sync.WaitGroup devuelto por Run antes de leer."
+    }
+  ],
+  "minor_findings": [
+    "TestRun descarta el *sync.WaitGroup devuelto por Run; usarlo elimina la dependencia de timing.",
+    "Run podria aceptar un *sync.WaitGroup como parametro para simplificar el patron envolvente en main.go."
+  ],
+  "positive_notes": [
+    "Error wrapping con %w correcto end-to-end.",
+    "sql.ErrNoRows -> ErrNotFound -> 404; RowsAffected y rows.Err() chequeados; defer rows.Close().",
+    "Queries parametrizadas ($1/$2), sin SQL injection ni secretos hardcodeados; input validation en Create.",
+    "Pool configurado + PingContext + defer db.Close(); graceful shutdown en main.go.",
+    "Fix de wg.Add(1) antes del go y semaphore pattern en ProcessItems correctos."
+  ],
+  "note": "REQUEST_CHANGES no permitido en PR propio; review emitido como COMMENT con hallazgo bloqueante explicito."
+}
