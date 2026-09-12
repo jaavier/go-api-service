@@ -98,8 +98,18 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 
 // Run reads messages from ch until the channel is closed or ctx is cancelled.
 // The goroutine exits cleanly in both cases, preventing a goroutine leak.
-func Run(ctx context.Context, ch <-chan string, handle func(string)) {
+//
+// Run returns a *sync.WaitGroup already incremented for the spawned goroutine.
+// Callers that need to guarantee the worker has fully drained before releasing
+// shared resources (e.g. closing the DB during graceful shutdown) can call
+// wg.Wait() after cancelling the context or closing ch. Multiple Run calls may
+// share a single WaitGroup by passing the returned one back in via a wrapper,
+// but the common pattern is to Wait on each returned group.
+func Run(ctx context.Context, ch <-chan string, handle func(string)) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			select {
 			case msg, ok := <-ch:
@@ -112,4 +122,5 @@ func Run(ctx context.Context, ch <-chan string, handle func(string)) {
 			}
 		}
 	}()
+	return &wg
 }
