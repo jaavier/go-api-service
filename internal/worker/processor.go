@@ -13,11 +13,12 @@ import (
 // The function blocks until all items are processed or ctx is cancelled.
 //
 // Return contract: on success it returns the processed results and a nil error.
-// If ctx is cancelled before all items are dispatched, it waits for the
-// in-flight goroutines to finish (no data race on the internal slice) and then
-// returns a nil result slice together with a non-nil ctx.Err(). Partial results
-// are intentionally discarded so that a caller can never accidentally use an
-// incomplete slice by ignoring the error.
+// If ctx is cancelled at any point — before all items are dispatched or after,
+// while goroutines are still in flight — it waits for the in-flight goroutines
+// to finish (no data race on the internal slice) and then returns a nil result
+// slice together with a non-nil ctx.Err(). Partial results are intentionally
+// discarded so that a caller can never accidentally use an incomplete slice by
+// ignoring the error.
 func ProcessItems(ctx context.Context, items []string, concurrency int) ([]string, error) {
 	if concurrency <= 0 {
 		concurrency = 1
@@ -63,6 +64,16 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 				wg.Done()
 			}()
 
+			// Honour cancellation inside the goroutine too. Once items are
+			// dispatched, a later cancellation must still be observed so the
+			// worker skips its (potentially expensive) work instead of
+			// blindly producing a result the caller will discard.
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			processed := fmt.Sprintf("processed:%s", i)
 
 			mu.Lock()
@@ -72,6 +83,16 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 	}
 
 	wg.Wait()
+
+	// A cancellation may have arrived after every item was dispatched but
+	// before (or while) the goroutines ran. Check it here so the documented
+	// contract holds end-to-end: on cancellation we discard partial results
+	// and surface ctx.Err() rather than returning a possibly-incomplete slice
+	// with a nil error.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	return results, nil
 }
 
