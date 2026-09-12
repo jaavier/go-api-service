@@ -1,26 +1,45 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
-// NewDB opens a Postgres connection.
-// BUG: no SetMaxOpenConns / SetMaxIdleConns / SetConnMaxLifetime configured.
-// BUG: dsn is never validated before use.
-func NewDB(dsn string) (*sql.DB, error) {
+const (
+	dbMaxOpenConns    = 25
+	dbMaxIdleConns    = 5
+	dbConnMaxLifetime = 5 * time.Minute
+)
+
+// NewDB opens and validates a Postgres connection pool.
+//
+// The DSN must be a valid libpq connection string, e.g.:
+//
+//	postgres://user:pass@localhost/dbname?sslmode=disable
+//
+// A Ping is performed to detect misconfigurations early.
+func NewDB(ctx context.Context, dsn string) (*sql.DB, error) {
+	if dsn == "" {
+		return nil, fmt.Errorf("store: dsn must not be empty")
+	}
+
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		return nil, err // error not wrapped
+		return nil, fmt.Errorf("store: open db: %w", err)
 	}
-	return db, nil
-}
 
-// execQuery runs a query and silently drops the error.
-// BUG: returned error is discarded.
-func execQuery(db *sql.DB, query string) {
-	db.Exec(query) // error ignored
-	fmt.Println("query executed")
+	db.SetMaxOpenConns(dbMaxOpenConns)
+	db.SetMaxIdleConns(dbMaxIdleConns)
+	db.SetConnMaxLifetime(dbConnMaxLifetime)
+
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store: ping db: %w", err)
+	}
+
+	return db, nil
 }
