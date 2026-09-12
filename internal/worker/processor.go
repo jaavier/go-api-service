@@ -11,7 +11,12 @@ import (
 // concurrency controls the maximum number of goroutines running in parallel.
 // If concurrency <= 0 it defaults to 1.
 // The function blocks until all items are processed or ctx is cancelled.
-// It returns the processed results and any context error.
+//
+// Return contract: on success it returns the processed results and a nil error.
+// If ctx is cancelled before all items are dispatched, it waits for the
+// in-flight goroutines to finish and returns the PARTIAL results gathered so
+// far together with a non-nil ctx.Err(). Callers that only want complete
+// results must check the error and discard the slice on a non-nil error.
 func ProcessItems(ctx context.Context, items []string, concurrency int) ([]string, error) {
 	if concurrency <= 0 {
 		concurrency = 1
@@ -25,16 +30,18 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 	)
 
 	for _, item := range items {
-		// Check for cancellation before launching each unit of work.
+		// Acquire a slot, but also honour cancellation while blocked here.
+		// A plain "sem <- struct{}{}" would block indefinitely when the pool
+		// is full even if ctx was already cancelled; the select guarantees an
+		// early exit under load.
 		select {
+		case sem <- struct{}{}: // acquire slot
 		case <-ctx.Done():
 			wg.Wait()
 			return results, ctx.Err()
-		default:
 		}
 
-		sem <- struct{}{} // acquire slot — blocks when pool is full
-		wg.Add(1)         // MUST be called before go, not inside
+		wg.Add(1) // MUST be called before go, not inside
 
 		go func(i string) {
 			defer func() {
