@@ -20,13 +20,13 @@ type Config struct {
 	Port int
 	// Debug enables verbose logging. Env: DEBUG. Default: false.
 	Debug bool
-	// MaxWorkers is the worker-pool size. Env: MAX_WORKERS. Default: 4.
+	// MaxWorkers is the worker-pool size. Must be > 0. Env: MAX_WORKERS. Default: 4.
 	MaxWorkers int
 }
 
 // Load reads configuration from environment variables.
 // Returns an error if a required variable is missing or a numeric variable
-// cannot be parsed.
+// cannot be parsed or is out of range.
 func Load() (*Config, error) {
 	cfg := &Config{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
@@ -51,6 +51,9 @@ func Load() (*Config, error) {
 		v, err := strconv.Atoi(raw)
 		if err != nil {
 			return nil, fmt.Errorf("config: invalid MAX_WORKERS %q: %w", raw, err)
+		}
+		if v <= 0 {
+			return nil, fmt.Errorf("config: MAX_WORKERS must be > 0, got %d", v)
 		}
 		cfg.MaxWorkers = v
 	}
