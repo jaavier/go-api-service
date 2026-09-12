@@ -4,8 +4,8 @@
   "owner": "jaavier",
   "repo": "go-api-service",
   "pr": 1,
-  "head_sha": "02b1b2f7a3e1c91ca7f482aa7bd941bbe2d97226",
-  "review_url": "https://github.com/jaavier/go-api-service/pull/1#pullrequestreview-5188496662",
+  "head_sha": "0f6d011566945188089290f0107063b2cf841e6a",
+  "review_url": "https://github.com/jaavier/go-api-service/pull/1#pullrequestreview-5188500589",
   "verdict": "findings",
   "blocking_findings": [
     {
@@ -13,8 +13,8 @@
       "file": "internal/worker/processor_test.go",
       "symbol": "TestRun",
       "line": 103,
-      "summary": "Data race (aun presente en HEAD 02b1b2f): el slice `received` se escribe desde la goroutine interna que lanza Run sin sincronizacion. La unica relacion happens-before es close(done) en la 3a invocacion de handle; las escrituras 1 y 2 quedan sin relacion con ninguna lectura sincronizada. Ademas se descarta el *sync.WaitGroup devuelto por Run, por lo que el test no espera el fin real de la goroutine. `go test -race` (declarado obligatorio en el checklist del PR) lo marca y rompe el CI declarado.",
-      "suggested_fix": "Proteger `received` con sync.Mutex, o que handle empuje a un canal bufferizado y el test recolecte desde ahi; en ambos casos esperar el *sync.WaitGroup devuelto por Run antes de leer received."
+      "summary": "Data race (aun presente en HEAD 0f6d011): el slice `received` se escribe desde la goroutine interna que lanza Run (dentro de handle) sin sincronizacion. La unica relacion happens-before es close(done) en la 3a invocacion de handle; las escrituras 1 y 2 quedan sin relacion con ninguna lectura sincronizada. Ademas se descarta el *sync.WaitGroup devuelto por Run, por lo que el test no espera el fin real de la goroutine. `go test -race` (declarado obligatorio en el checklist del PR) lo marca y rompe el CI declarado.",
+      "suggested_fix": "Proteger `received` con sync.Mutex, o que handle empuje a un canal bufferizado y el test recolecte desde ahi; en ambos casos capturar el *sync.WaitGroup devuelto por Run y hacer wg.Wait() antes de leer received."
     }
   ],
   "minor_findings": [
@@ -25,8 +25,8 @@
     "Error wrapping con %w correcto end-to-end.",
     "sql.ErrNoRows -> ErrNotFound -> 404; RowsAffected y rows.Err() chequeados; defer rows.Close().",
     "Queries parametrizadas ($1/$2), sin SQL injection ni secretos hardcodeados; input validation en Create.",
-    "Pool configurado + PingContext + defer db.Close(); graceful shutdown en main.go.",
+    "Pool configurado + PingContext + defer db.Close(); graceful shutdown en main.go con drenado de workers antes del db.Close().",
     "Fix de wg.Add(1) antes del go y semaphore pattern en ProcessItems correctos."
   ],
-  "note": "Re-review sobre HEAD 02b1b2f (artefacto previo apuntaba a cec0d52). El hallazgo bloqueante NO fue corregido: sigue vivo en el HEAD actual. REQUEST_CHANGES no permitido en PR propio; review emitido como COMMENT con hallazgo bloqueante explicito. Ruteo: findings -> fixer."
+  "note": "Re-review sobre HEAD 0f6d011 (artefacto previo apuntaba a 02b1b2f). El hallazgo bloqueante de concurrencia NO fue corregido: sigue vivo en el HEAD actual. REQUEST_CHANGES no permitido en PR propio; review emitido como COMMENT con hallazgo bloqueante explicito. Ruteo: findings -> fixer."
 }
