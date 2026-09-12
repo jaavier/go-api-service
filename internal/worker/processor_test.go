@@ -119,26 +119,39 @@ func TestRun(t *testing.T) {
 func TestRun_ContextCancel(t *testing.T) {
 	t.Parallel()
 
-	ch := make(chan string) // never written to
+	ch := make(chan string) // unbuffered: a send only succeeds if someone reads
 	ctx, cancel := context.WithCancel(context.Background())
 
-	exited := make(chan struct{})
-	Run(ctx, ch, func(msg string) {})
+	// Instrument handle so we can observe whether Run's goroutine is still
+	// consuming after cancellation. A real consumer would push to this channel.
+	calls := make(chan string, 1)
+	Run(ctx, ch, func(msg string) { calls <- msg })
 
-	// Give the goroutine a moment to start, then cancel.
-	time.Sleep(10 * time.Millisecond)
+	// Cancel the context; Run's goroutine must observe ctx.Done() and exit.
 	cancel()
 
-	// Wrap Run's goroutine exit detection: send a no-op after cancel
-	// and expect it not to block (goroutine already gone).
-	go func() {
-		// The goroutine inside Run should have exited; closing ch is safe.
-		close(exited)
-	}()
-
+	// After cancellation, attempt to hand a message to the worker. Because the
+	// channel is unbuffered, the send can only proceed if the goroutine is
+	// still reading — i.e. if it leaked. We therefore expect the send to time
+	// out (nobody reading) and, crucially, handle to never be invoked.
 	select {
-	case <-exited:
-	case <-time.After(2 * time.Second):
-		t.Fatal("goroutine did not exit after context cancellation")
+	case ch <- "late":
+		// Someone read from the channel after cancellation. Confirm whether
+		// handle actually ran; if so, the goroutine leaked.
+		select {
+		case <-calls:
+			t.Fatal("handle was invoked after context cancellation: Run goroutine leaked")
+		case <-time.After(50 * time.Millisecond):
+			t.Fatal("channel was read after cancellation but handle did not run: unexpected consumer")
+		}
+	case <-time.After(50 * time.Millisecond):
+		// Expected: the goroutine already exited, so nobody consumes "late".
+	}
+
+	// Sanity: no spurious handle invocations happened.
+	select {
+	case msg := <-calls:
+		t.Fatalf("unexpected handle invocation after cancel with msg %q", msg)
+	default:
 	}
 }
