@@ -4,8 +4,8 @@
   "owner": "jaavier",
   "repo": "go-api-service",
   "pr": 1,
-  "head_sha": "814a9a332be66ce789d5742dab7caabea309c69f",
-  "review_url": "https://github.com/jaavier/go-api-service/pull/1#pullrequestreview-5188492223",
+  "head_sha": "cec0d52a78ff590e42403b8d57e20c912f4d6461",
+  "review_url": "https://github.com/jaavier/go-api-service/pull/1#pullrequestreview-5188494517",
   "verdict": "findings",
   "blocking_findings": [
     {
@@ -13,13 +13,14 @@
       "file": "internal/worker/processor_test.go",
       "symbol": "TestRun",
       "line": 103,
-      "summary": "Data race: `received` slice escrito desde la goroutine de Run sin sincronizacion; solo hay happens-before via close(done) en la 3a iteracion. `go test -race` (declarado obligatorio en el checklist del PR) lo marca.",
+      "summary": "Data race (aun presente en HEAD cec0d52): `received` slice escrito desde la goroutine interna de Run sin sincronizacion; solo hay happens-before via close(done) en la 3a iteracion, las escrituras 1 y 2 quedan sin relacion con ninguna lectura. `go test -race` (declarado obligatorio en el checklist del PR) lo marca y rompe el CI declarado.",
       "suggested_fix": "Proteger `received` con sync.Mutex, o que handle empuje a un canal bufferizado y el test recolecte desde ahi, esperando el *sync.WaitGroup devuelto por Run antes de leer."
     }
   ],
   "minor_findings": [
-    "TestRun descarta el *sync.WaitGroup devuelto por Run; usarlo elimina la dependencia de timing.",
-    "Run podria aceptar un *sync.WaitGroup como parametro para simplificar el patron envolvente en main.go."
+    "TestRun descarta el *sync.WaitGroup devuelto por Run; usarlo elimina la dependencia de timing y de close(done).",
+    "Run podria aceptar un *sync.WaitGroup como parametro para simplificar el patron envolvente en main.go.",
+    "TestRun_ContextCancel depende de time.Sleep para sincronizar; algo flaky bajo carga de CI (race benigno, acotado en el comentario)."
   ],
   "positive_notes": [
     "Error wrapping con %w correcto end-to-end.",
@@ -28,5 +29,5 @@
     "Pool configurado + PingContext + defer db.Close(); graceful shutdown en main.go.",
     "Fix de wg.Add(1) antes del go y semaphore pattern en ProcessItems correctos."
   ],
-  "note": "REQUEST_CHANGES no permitido en PR propio; review emitido como COMMENT con hallazgo bloqueante explicito."
+  "note": "Re-review sobre HEAD cec0d52 (los reviews previos apuntaban a 814a9a3). El hallazgo bloqueante NO fue corregido: sigue vivo en el HEAD actual. REQUEST_CHANGES no permitido en PR propio; review emitido como COMMENT con hallazgo bloqueante explicito. Ruteo: findings -> fixer."
 }
