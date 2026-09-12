@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -49,10 +50,29 @@ func run() error {
 	defer workerCancel()
 
 	jobs := make(chan string, cfg.MaxWorkers)
+
+	// Track every worker goroutine so shutdown can wait for them to drain
+	// before the deferred db.Close() runs — otherwise a worker could touch a
+	// DB handle that has already been closed.
+	var workers sync.WaitGroup
 	for i := 0; i < cfg.MaxWorkers; i++ {
-		worker.Run(workerCtx, jobs, func(msg string) {
+		wg := worker.Run(workerCtx, jobs, func(msg string) {
 			log.Printf("worker: processed job %q", msg)
 		})
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			wg.Wait()
+		}()
+	}
+
+	// Guard against double-close of jobs: main is currently the only producer,
+	// but closing exactly once keeps the shutdown path safe if that changes.
+	var closeJobs sync.Once
+	stopWorkers := func() {
+		closeJobs.Do(func() { close(jobs) })
+		workerCancel()
+		workers.Wait() // block until every worker goroutine has returned
 	}
 
 	r := mux.NewRouter()
@@ -90,15 +110,18 @@ func run() error {
 	case sig := <-quit:
 		log.Printf("received signal %s, shutting down", sig)
 
-		// Stop feeding the pool and signal the workers to exit.
-		close(jobs)
-		workerCancel()
-
 		shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutCancel()
+
+		// Stop accepting HTTP work first, then drain the worker pool, and only
+		// after both have finished let the deferred db.Close() run.
 		if err := srv.Shutdown(shutCtx); err != nil {
+			// Still drain workers before returning so db.Close() is safe.
+			stopWorkers()
 			return fmt.Errorf("graceful shutdown: %w", err)
 		}
+
+		stopWorkers()
 		log.Println("server stopped cleanly")
 	}
 
