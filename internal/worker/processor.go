@@ -14,9 +14,10 @@ import (
 //
 // Return contract: on success it returns the processed results and a nil error.
 // If ctx is cancelled before all items are dispatched, it waits for the
-// in-flight goroutines to finish and returns the PARTIAL results gathered so
-// far together with a non-nil ctx.Err(). Callers that only want complete
-// results must check the error and discard the slice on a non-nil error.
+// in-flight goroutines to finish (no data race on the internal slice) and then
+// returns a nil result slice together with a non-nil ctx.Err(). Partial results
+// are intentionally discarded so that a caller can never accidentally use an
+// incomplete slice by ignoring the error.
 func ProcessItems(ctx context.Context, items []string, concurrency int) ([]string, error) {
 	if concurrency <= 0 {
 		concurrency = 1
@@ -39,7 +40,7 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 		select {
 		case <-ctx.Done():
 			wg.Wait()
-			return results, ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 
@@ -51,7 +52,7 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 		case sem <- struct{}{}: // acquire slot
 		case <-ctx.Done():
 			wg.Wait()
-			return results, ctx.Err()
+			return nil, ctx.Err()
 		}
 
 		wg.Add(1) // MUST be called before go, not inside
