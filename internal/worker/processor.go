@@ -30,6 +30,19 @@ func ProcessItems(ctx context.Context, items []string, concurrency int) ([]strin
 	)
 
 	for _, item := range items {
+		// Early exit if the context is already cancelled, regardless of
+		// whether a slot is free in the pool. Without this check, when
+		// concurrency >= len(items) (or a slot is always available) the
+		// "sem <- struct{}{}" case below would win immediately and
+		// ctx.Done() would never be observed, processing every item and
+		// returning nil even for an already-cancelled context.
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return results, ctx.Err()
+		default:
+		}
+
 		// Acquire a slot, but also honour cancellation while blocked here.
 		// A plain "sem <- struct{}{}" would block indefinitely when the pool
 		// is full even if ctx was already cancelled; the select guarantees an
