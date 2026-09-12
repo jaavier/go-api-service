@@ -14,6 +14,7 @@ import (
 	"github.com/jaavier/go-api-service/internal/config"
 	"github.com/jaavier/go-api-service/internal/handler"
 	"github.com/jaavier/go-api-service/internal/store"
+	"github.com/jaavier/go-api-service/internal/worker"
 )
 
 func main() {
@@ -41,6 +42,19 @@ func run() error {
 	userStore := store.NewUserStore(db)
 	userHandler := handler.NewUserHandler(userStore)
 
+	// Background worker pool sized by cfg.MaxWorkers. Each worker consumes
+	// jobs from a shared channel and exits cleanly when the channel is closed
+	// or workerCtx is cancelled (see graceful shutdown below).
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+
+	jobs := make(chan string, cfg.MaxWorkers)
+	for i := 0; i < cfg.MaxWorkers; i++ {
+		worker.Run(workerCtx, jobs, func(msg string) {
+			log.Printf("worker: processed job %q", msg)
+		})
+	}
+
 	r := mux.NewRouter()
 	r.HandleFunc("/users", userHandler.List).Methods(http.MethodGet)
 	r.HandleFunc("/users/{id}", userHandler.Get).Methods(http.MethodGet)
@@ -61,7 +75,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Printf("server listening on %s", srv.Addr)
+		log.Printf("server listening on %s (workers=%d)", srv.Addr, cfg.MaxWorkers)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serveErr <- err
 		}
@@ -75,6 +89,11 @@ func run() error {
 		}
 	case sig := <-quit:
 		log.Printf("received signal %s, shutting down", sig)
+
+		// Stop feeding the pool and signal the workers to exit.
+		close(jobs)
+		workerCancel()
+
 		shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutCancel()
 		if err := srv.Shutdown(shutCtx); err != nil {
