@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -10,26 +11,46 @@ import (
 	"github.com/jaavier/go-api-service/internal/store"
 )
 
+// UserLister is the read dependency the handler needs to serve paginated lists.
+// Depending on an interface (rather than *store.UserStore) keeps the handler
+// testable with a lightweight mock.
+type UserLister interface {
+	ListPaginated(ctx context.Context, page model.Page) ([]*model.User, int, error)
+}
+
 // UserHandler handles HTTP requests for users.
-// BUG: depends on concrete *store.UserStore instead of an interface.
+//
+// lister serves the paginated List endpoint and can be a mock in tests.
+// crud is the concrete store used by Get/Create/Delete; it is nil in the
+// list-only handler tests, which never exercise those routes.
 type UserHandler struct {
-	store *store.UserStore
+	lister UserLister
+	crud   *store.UserStore
 }
 
 func NewUserHandler(s *store.UserStore) *UserHandler {
-	return &UserHandler{store: s}
+	return &UserHandler{lister: s, crud: s}
 }
 
-// List returns all users.
-// BUG: no request context passed down, no error response body.
+// List returns a paginated page of users.
+//
+// Query params:
+//   - page:      1-based page number (default 1)
+//   - page_size: items per page (default 20, capped at 100)
+//
+// Invalid or missing values fall back to the defaults.
+//
+// Response: {"data":[...],"page":N,"page_size":M,"total":T,"total_pages":P}
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
-	users, err := h.store.List()
+	p := parsePageParams(r)
+
+	users, total, err := h.lister.ListPaginated(r.Context(), p.toModelPage())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(users) // BUG: encode error ignored
+
+	writeJSON(w, http.StatusOK, newPaginatedResponse(users, p, total))
 }
 
 // Get returns a single user.
@@ -41,7 +62,7 @@ func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	u, err := h.store.GetByID(id)
+	u, err := h.crud.GetByID(id)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError) // 404 missing
 		return
@@ -59,7 +80,7 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.Create(&u); err != nil {
+	if err := h.crud.Create(&u); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -76,9 +97,19 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.DeleteByID(id); err != nil {
+	if err := h.crud.DeleteByID(id); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }

@@ -3,10 +3,15 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/jaavier/go-api-service/internal/model"
 )
+
+// ErrInvalidPage is returned by ListPaginated when the requested page has an
+// invalid size or a negative offset.
+var ErrInvalidPage = errors.New("invalid pagination: size must be > 0 and offset >= 0")
 
 // UserStore holds a db reference.
 type UserStore struct {
@@ -37,6 +42,45 @@ func (s *UserStore) List() ([]*model.User, error) {
 	return users, nil // rows.Err() never checked
 }
 
+// ListPaginated fetches a single page of users ordered by id, together with
+// the total number of users so callers can build pagination metadata.
+//
+// It validates the page (size > 0, offset >= 0) and fails fast with
+// ErrInvalidPage before touching the database. It propagates the request
+// context, defers rows.Close, checks rows.Err and wraps errors with %w so
+// callers can inspect them with errors.Is/As.
+func (s *UserStore) ListPaginated(ctx context.Context, page model.Page) (users []*model.User, total int, err error) {
+	if page.Size < 1 || page.Offset() < 0 {
+		return nil, 0, fmt.Errorf("%w: size=%d offset=%d", ErrInvalidPage, page.Size, page.Offset())
+	}
+
+	if err := s.Db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	rows, err := s.Db.QueryContext(ctx,
+		"SELECT id, name, email FROM users ORDER BY id LIMIT $1 OFFSET $2",
+		page.Size, page.Offset(),
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users page: %w", err)
+	}
+	defer rows.Close()
+
+	users = make([]*model.User, 0, page.Size)
+	for rows.Next() {
+		u := &model.User{}
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return nil, 0, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate users: %w", err)
+	}
+	return users, total, nil
+}
+
 // GetByID fetches one user.
 // BUG: no context, error not wrapped.
 func (s *UserStore) GetByID(id int64) (*model.User, error) {
@@ -65,6 +109,3 @@ func (s *UserStore) DeleteByID(id int64) error {
 	_, err := s.Db.Exec("DELETE FROM users WHERE id=$1", id)
 	return err
 }
-
-// Ensure context import is used to avoid compile error in original.
-var _ = context.Background
