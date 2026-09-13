@@ -1,61 +1,63 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 17 reviewer-auto)
-Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT (id 5188908678).
-Estado del fuente en feat/users-pagination @ HEAD: re-verificado archivo por archivo
-(handler/pagination.go + _test.go, model/pagination.go, store/user_store.go + _test.go).
-Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua. `go build ./... && go test ./...` NO pasa.
+Última revisión: 2026-09-13 (pass 18 reviewer-auto)
+Veredicto: CAMBIOS REQUERIDOS -> rutea a fixer-auto.
+Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
+Estado del fuente en feat/users-pagination @ HEAD b420157: re-verificado archivo por
+archivo (handler/pagination.go + _test.go, model/pagination.go, store/user_store.go
++ _test.go, user_handler.go + _test.go).
+Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continúa.
+`go build ./... && go test ./...` NO pasa.
 
 ## Hallazgos
 
-### ALTO (rompen compilacion / runtime)
-1. handler/pagination_test.go usa API inexistente: `parsePageParams`, tipo `pageParams`,
-   campos `.Page`/`.PageSize`, metodos `.limit()`/`.offset()`, `newPaginatedResponse`,
-   campo `.TotalPages`. Impl real: `parsePage(r) (model.Page, error)` +
-   `model.Page{Number,Size}.Offset()`. -> paquete handler NO compila.
-2. `total_pages` documentado en README + PR body + asserted en test, pero
-   `model.PagedUsers` no tiene `TotalPages` ni nada lo calcula.
-3. store/user_store_pagination_test.go llama `ListPaginated(ctx, limit, offset)` (3 args int)
-   y espera guard-clauses. Firma real: `ListPaginated(ctx, page model.Page)` (2 args),
-   sin validacion (con Db:nil haria nil-deref). -> paquete store NO compila + comportamiento ausente.
-4. `Page.Offset() = (Number-1)*Size` sin cota inferior -> offset negativo si Number==0.
-   Store tampoco valida Size/Offset.
+### ALTO (rompen compilación / runtime)
+1. **handler/pagination_test.go usa una API que no existe.** El test invoca
+   `parsePageParams(req)`, un tipo `pageParams` con campos `.Page`/`.PageSize` y
+   métodos `.limit()`/`.offset()`, además de `newPaginatedResponse(...)` con campo
+   `.TotalPages`. La implementación real (pagination.go) expone
+   `parsePage(r) (model.Page, error)` y `model.Page{Number,Size}` con `.Offset()`.
+   -> el paquete `handler` NO compila.
+2. **`total_pages` documentado y testeado pero no existe.** README, PR body y
+   `TestNewPaginatedResponse` esperan `total_pages`, pero `model.PagedUsers` sólo
+   tiene `Data/Page/PageSize/Total`. No hay nada que calcule total_pages
+   (ceil(total/size)). -> respuesta incompleta vs. contrato documentado + test roto.
+3. **store/user_store_pagination_test.go usa firma incorrecta.** Llama
+   `ListPaginated(ctx, limit, offset)` (3 args int) y espera guard-clauses. La firma
+   real es `ListPaginated(ctx, page model.Page)` (2 args) y NO valida nada
+   (con `Db:nil` haría nil-deref en `QueryRowContext`). -> el paquete `store` NO
+   compila y el comportamiento esperado (validación) está ausente.
+4. **`Page.Offset()` sin cota inferior.** `(Number-1)*Size` da offset negativo si
+   `Number==0`. `parsePositiveInt` rechaza <1 en el path HTTP, pero `Offset()` es
+   público y el store no valida `Size>0`/`Offset>=0` antes de tocar la DB.
 
 ### MEDIO
-5. `UserHandler.store` queda como campo muerto (List usa `h.lister`).
+5. **Campo muerto `UserHandler.store`.** Tras el refactor `List` usa `h.lister`;
+   `store` queda sin uso real (sólo asignado en el constructor). Confunde y es
+   superficie muerta.
 
 ## Cosas bien hechas
 - context propagado (QueryContext/QueryRowContext)
-- defer rows.Close() + rows.Err() chequeado
+- defer rows.Close() + rows.Err() chequeado tras la iteración
 - errores envueltos con %w
-- interfaz UserLister para testear sin DB
+- interfaz UserLister para testear el handler sin DB
+- prealoc de slice con cap = page.Size
 
 ## Para fixer-auto
-Unificar nombres/firmas entre tests e impl (elegir UNA API), implementar total_pages
-en model.PagedUsers (ceil(total/size), 0 si total==0), agregar guard-clauses en
-ListPaginated (Size>0, offset>=0) o alinear el test a la firma real, cota inferior
-en Offset() (no negativo), limpiar campo store muerto.
-Objetivo: `go build ./... && go test ./...` verde.
+- Unificar nombres/firmas entre tests e impl: elegir UNA API de parsing
+  (`parsePage`/`model.Page` **o** `parsePageParams`/`pageParams`) y alinear los tests.
+- Implementar `total_pages` en el envelope (`ceil(total/size)`, 0 si total==0) para
+  cumplir README/PR body/test.
+- Alinear store/user_store_pagination_test.go a la firma real `ListPaginated(ctx, page)`
+  **o** cambiar la firma; agregar guard-clauses (`Size>0`, `Offset>=0`) que fallen
+  antes de tocar la DB.
+- Cota inferior en `Page.Offset()` (nunca negativo).
+- Eliminar el campo muerto `UserHandler.store`.
+Objetivo: `go build ./... && go test ./...` en verde.
 
 ## Historial de passes
-- pass 1-6: mismos hallazgos, sin correccion. Commits de doc no tocan el fuente.
-- pass 7 (2026-09-13): sin cambios en fuente respecto a pass 6 -> ruteo a fixer-auto.
-- pass 8 (2026-09-13): fuente re-verificado; mismatch tests/impl intacto, total_pages
-  ausente, sin guard-clauses. Se mantiene ruteo a fixer-auto.
-- pass 9 (2026-09-13): re-verificado @ commit 57985e5; 5 hallazgos intactos. Review COMMENT 5188882872.
-- pass 10 (2026-09-13): re-verificado @ commit a038002; 5 hallazgos intactos. Review COMMENT 5188885078.
-- pass 11 (2026-09-13): re-verificado @ HEAD 78f9fe0; 5 hallazgos (4 ALTO + 1 MEDIO) intactos. Ruteo a fixer-auto.
-- pass 12 (2026-09-13): re-verificado @ HEAD f854b87; los 5 hallazgos intactos. Review COMMENT 5188889681.
-- pass 13 (2026-09-13): re-verificado @ HEAD 2f7f504; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos. Review COMMENT 5188892083.
-- pass 14 (2026-09-13): re-verificado archivo por archivo @ HEAD; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
-  fuente sin cambios. Review COMMENT 5188894231. Ruteo a fixer-auto.
-- pass 15 (2026-09-13): re-verificado archivo por archivo @ HEAD 6094f9a (handler/pagination.go + _test.go,
-  model/pagination.go, store/user_store.go + _test.go); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
-  fuente sin cambios respecto a pass 14. Review COMMENT 5188896902. Ruteo a fixer-auto.
-- pass 16 (2026-09-13): re-verificado archivo por archivo @ HEAD b43d007 (handler/pagination.go,
-  model/pagination.go, store/user_store.go + tests); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
-  fuente sin cambios. Review COMMENT 5188903791. Ruteo a fixer-auto.
-- pass 17 (2026-09-13): re-verificado archivo por archivo @ HEAD (handler/pagination.go + _test.go,
-  model/pagination.go, store/user_store.go + _test.go); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
-  fuente sin cambios respecto a pass 16. Review COMMENT 5188908678. Ruteo a fixer-auto.
+- pass 1-17: mismos 5 hallazgos (4 ALTO + 1 MEDIO), sin corrección en el fuente.
+- pass 18 (2026-09-13): re-verificado archivo por archivo @ HEAD b420157
+  (handler/pagination.go + _test.go, model/pagination.go, store/user_store.go +
+  _test.go, user_handler.go + _test.go). Los 5 hallazgos intactos, fuente sin
+  cambios respecto a pass 17. Ruteo a fixer-auto.
