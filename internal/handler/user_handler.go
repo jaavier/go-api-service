@@ -15,7 +15,7 @@ import (
 // Depending on an interface (rather than *store.UserStore) keeps the handler
 // testable with a lightweight mock.
 type UserLister interface {
-	ListPaginated(ctx context.Context, page model.Page) ([]*model.User, int, error)
+	ListPaginated(ctx context.Context, page model.Page, filter model.UserFilter) ([]*model.User, int, error)
 }
 
 // UserHandler handles HTTP requests for users.
@@ -37,14 +37,19 @@ func NewUserHandler(s *store.UserStore) *UserHandler {
 // Query params:
 //   - page:      1-based page number (default 1)
 //   - page_size: items per page (default 20, capped at 100)
+//   - q:         case-insensitive substring filter on name OR email (optional)
+//   - sort:      order field, one of id|name|email (default id)
+//   - order:     order direction, asc|desc (default asc)
 //
-// Invalid or missing values fall back to the defaults.
+// Invalid or missing values fall back to the defaults; without any filter the
+// endpoint behaves exactly as before (ordered by id asc, no filter).
 //
 // Response: {"data":[...],"page":N,"page_size":M,"total":T,"total_pages":P}
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	p := parsePageParams(r)
+	filter := parseUserFilter(r)
 
-	users, total, err := h.lister.ListPaginated(r.Context(), p.toModelPage())
+	users, total, err := h.lister.ListPaginated(r.Context(), p.toModelPage(), filter)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
