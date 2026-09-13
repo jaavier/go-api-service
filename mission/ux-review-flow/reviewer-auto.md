@@ -1,12 +1,11 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 14 reviewer-auto)
+Ultima revision: 2026-09-13 (pass 15 reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT (id 5188894231).
-Estado del fuente en feat/users-pagination @ HEAD: re-verificado archivo por archivo
-(handler/pagination.go, handler/pagination_test.go, model/pagination.go,
-store/user_store.go, store/user_store_pagination_test.go). Los hallazgos
-ALTO/MEDIO SIGUEN sin corregir -> loop continua. `go build ./... && go test ./...` NO pasa.
+Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT (id 5188896902).
+Estado del fuente en feat/users-pagination @ HEAD 6094f9a: re-verificado archivo por archivo
+(handler/pagination.go + _test.go, model/pagination.go, store/user_store.go + _test.go).
+Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua. `go build ./... && go test ./...` NO pasa.
 
 ## Hallazgos
 
@@ -15,11 +14,11 @@ ALTO/MEDIO SIGUEN sin corregir -> loop continua. `go build ./... && go test ./..
    campos `.Page`/`.PageSize`, metodos `.limit()`/`.offset()`, `newPaginatedResponse`,
    campo `.TotalPages`. Impl real: `parsePage(r) (model.Page, error)` +
    `model.Page{Number,Size}.Offset()`. -> paquete handler NO compila.
-2. store/user_store_pagination_test.go llama `ListPaginated(ctx, limit, offset)` (3 args int)
+2. `total_pages` documentado en README + PR body + asserted en test, pero
+   `model.PagedUsers` no tiene `TotalPages` ni nada lo calcula.
+3. store/user_store_pagination_test.go llama `ListPaginated(ctx, limit, offset)` (3 args int)
    y espera guard-clauses. Firma real: `ListPaginated(ctx, page model.Page)` (2 args),
    sin validacion (con Db:nil haria nil-deref). -> paquete store NO compila + comportamiento ausente.
-3. `total_pages` documentado en README + PR body + asserted en test, pero
-   `model.PagedUsers` no tiene `TotalPages` ni nada lo calcula.
 4. `Page.Offset() = (Number-1)*Size` sin cota inferior -> offset negativo si Number==0.
    Store tampoco valida Size/Offset.
 
@@ -49,6 +48,8 @@ Objetivo: `go build ./... && go test ./...` verde.
 - pass 11 (2026-09-13): re-verificado @ HEAD 78f9fe0; 5 hallazgos (4 ALTO + 1 MEDIO) intactos. Ruteo a fixer-auto.
 - pass 12 (2026-09-13): re-verificado @ HEAD f854b87; los 5 hallazgos intactos. Review COMMENT 5188889681.
 - pass 13 (2026-09-13): re-verificado @ HEAD 2f7f504; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos. Review COMMENT 5188892083.
-- pass 14 (2026-09-13): re-verificado archivo por archivo @ HEAD (handler/pagination.go + _test.go,
-  model/pagination.go, store/user_store.go + _test.go); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
+- pass 14 (2026-09-13): re-verificado archivo por archivo @ HEAD; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
   fuente sin cambios. Review COMMENT 5188894231. Ruteo a fixer-auto.
+- pass 15 (2026-09-13): re-verificado archivo por archivo @ HEAD 6094f9a (handler/pagination.go + _test.go,
+  model/pagination.go, store/user_store.go + _test.go); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
+  fuente sin cambios respecto a pass 14. Review COMMENT 5188896902. Ruteo a fixer-auto.
