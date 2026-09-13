@@ -40,56 +40,70 @@ func TestListUsers(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		url        string
-		lister     *mockLister
-		wantStatus int
-		wantPage   int
-		wantSize   int
-		wantTotal  int
-		wantLen    int
+		name           string
+		url            string
+		lister         *mockLister
+		wantStatus     int
+		wantPage       int
+		wantSize       int
+		wantTotal      int
+		wantTotalPages int
+		wantLen        int
 	}{
 		{
-			name:       "defaults when no query params",
-			url:        "/users",
-			lister:     &mockLister{users: sample, total: 42},
-			wantStatus: http.StatusOK,
-			wantPage:   1,
-			wantSize:   20,
-			wantTotal:  42,
-			wantLen:    2,
+			name:           "defaults when no query params",
+			url:            "/users",
+			lister:         &mockLister{users: sample, total: 42},
+			wantStatus:     http.StatusOK,
+			wantPage:       1,
+			wantSize:       20,
+			wantTotal:      42,
+			wantTotalPages: 3,
+			wantLen:        2,
 		},
 		{
-			name:       "explicit page and page_size",
-			url:        "/users?page=3&page_size=5",
-			lister:     &mockLister{users: sample, total: 42},
-			wantStatus: http.StatusOK,
-			wantPage:   3,
-			wantSize:   5,
-			wantTotal:  42,
-			wantLen:    2,
+			name:           "explicit page and page_size",
+			url:            "/users?page=3&page_size=5",
+			lister:         &mockLister{users: sample, total: 42},
+			wantStatus:     http.StatusOK,
+			wantPage:       3,
+			wantSize:       5,
+			wantTotal:      42,
+			wantTotalPages: 9,
+			wantLen:        2,
 		},
 		{
-			name:       "page_size capped at max",
-			url:        "/users?page_size=1000",
-			lister:     &mockLister{users: sample, total: 42},
-			wantStatus: http.StatusOK,
-			wantPage:   1,
-			wantSize:   maxPageSize,
-			wantTotal:  42,
-			wantLen:    2,
+			name:           "page_size capped at max",
+			url:            "/users?page_size=1000",
+			lister:         &mockLister{users: sample, total: 42},
+			wantStatus:     http.StatusOK,
+			wantPage:       1,
+			wantSize:       maxPageSize,
+			wantTotal:      42,
+			wantTotalPages: 1,
+			wantLen:        2,
 		},
 		{
-			name:       "invalid page returns 400",
-			url:        "/users?page=abc",
-			lister:     &mockLister{users: sample, total: 42},
-			wantStatus: http.StatusBadRequest,
+			name:           "invalid page falls back to default",
+			url:            "/users?page=abc",
+			lister:         &mockLister{users: sample, total: 42},
+			wantStatus:     http.StatusOK,
+			wantPage:       1,
+			wantSize:       20,
+			wantTotal:      42,
+			wantTotalPages: 3,
+			wantLen:        2,
 		},
 		{
-			name:       "zero page_size returns 400",
-			url:        "/users?page_size=0",
-			lister:     &mockLister{users: sample, total: 42},
-			wantStatus: http.StatusBadRequest,
+			name:           "zero page_size falls back to default",
+			url:            "/users?page_size=0",
+			lister:         &mockLister{users: sample, total: 42},
+			wantStatus:     http.StatusOK,
+			wantPage:       1,
+			wantSize:       20,
+			wantTotal:      42,
+			wantTotalPages: 3,
+			wantLen:        2,
 		},
 		{
 			name:       "store error returns 500",
@@ -129,6 +143,9 @@ func TestListUsers(t *testing.T) {
 			}
 			if got.Total != tt.wantTotal {
 				t.Errorf("total = %d, want %d", got.Total, tt.wantTotal)
+			}
+			if got.TotalPages != tt.wantTotalPages {
+				t.Errorf("total_pages = %d, want %d", got.TotalPages, tt.wantTotalPages)
 			}
 			if len(got.Data) != tt.wantLen {
 				t.Errorf("len(data) = %d, want %d", len(got.Data), tt.wantLen)
