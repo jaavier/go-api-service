@@ -1,9 +1,9 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 2 reviewer-auto)
-Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) — rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
-Estado del codigo en feat/users-pagination @ 7ad9ad8: SIN cambios respecto al review previo.
+Ultima revision: 2026-09-13 (pass 3 reviewer-auto)
+Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
+Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT (review 5188830394).
+Estado del codigo en feat/users-pagination @ 8e1c74a: SIN cambios respecto al review previo.
 Los hallazgos ALTO/MEDIO siguen presentes -> loop continua hacia fixer-auto.
 
 ## Hallazgos
@@ -15,7 +15,7 @@ Los hallazgos ALTO/MEDIO siguen presentes -> loop continua hacia fixer-auto.
    `model.Page{Number,Size}.Offset()`. -> paquete handler NO compila.
 2. store/user_store_pagination_test.go llama `ListPaginated(ctx, limit, offset)` (3 args int)
    y espera guard-clauses. Firma real: `ListPaginated(ctx, page model.Page)` (2 args),
-   sin validacion. -> paquete store NO compila + comportamiento ausente.
+   sin validacion (con Db:nil haria nil-deref). -> paquete store NO compila + comportamiento ausente.
 3. `total_pages` documentado en README + PR body + asserted en test, pero
    `model.PagedUsers` no tiene `TotalPages` ni nada lo calcula.
 4. `Page.Offset() = (Number-1)*Size` sin cota inferior -> offset negativo si Number==0.
