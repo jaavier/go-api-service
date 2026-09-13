@@ -25,7 +25,7 @@ func TestListPaginated_InvalidArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := s.ListPaginated(context.Background(), tt.page)
+			_, _, err := s.ListPaginated(context.Background(), tt.page, model.UserFilter{})
 			if err == nil {
 				t.Fatalf("ListPaginated(%+v) expected error, got nil", tt.page)
 			}
@@ -33,5 +33,26 @@ func TestListPaginated_InvalidArgs(t *testing.T) {
 				t.Fatalf("ListPaginated(%+v) error = %v, want ErrInvalidPage", tt.page, err)
 			}
 		})
+	}
+}
+
+// TestUserFilterSafeLiterals documents the injection-defense contract the store
+// relies on: whatever a client sends for sort/order, the values the store
+// concatenates into ORDER BY are always drawn from a fixed whitelist.
+func TestUserFilterSafeLiterals(t *testing.T) {
+	f := model.UserFilter{SortBy: "name); DROP TABLE users;--", Order: "desc); --"}
+	if col := f.SortColumn(); col != "id" {
+		t.Errorf("SortColumn() = %q, want fixed fallback %q", col, "id")
+	}
+	if dir := f.Direction(); dir != "ASC" {
+		t.Errorf("Direction() = %q, want fixed fallback %q", dir, "ASC")
+	}
+
+	valid := model.UserFilter{SortBy: "email", Order: "desc"}
+	if col := valid.SortColumn(); col != "email" {
+		t.Errorf("SortColumn() = %q, want %q", col, "email")
+	}
+	if dir := valid.Direction(); dir != "DESC" {
+		t.Errorf("Direction() = %q, want %q", dir, "DESC")
 	}
 }

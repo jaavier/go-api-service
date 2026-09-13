@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jaavier/go-api-service/internal/model"
 )
@@ -11,6 +12,10 @@ const (
 	defaultPage     = 1
 	defaultPageSize = 20
 	maxPageSize     = 100
+
+	// maxQueryLen caps the length of the free-text search filter to protect
+	// the backend from pathological patterns.
+	maxQueryLen = 200
 )
 
 // pageParams holds the normalized pagination parameters parsed from the
@@ -52,6 +57,33 @@ func parsePageParams(r *http.Request) pageParams {
 	}
 
 	return pageParams{Page: page, PageSize: size}
+}
+
+// parseUserFilter extracts and normalizes the search/ordering query params
+// (`q`, `sort`, `order`) into a model.UserFilter.
+//
+//   - q:     trimmed of surrounding whitespace; an all-whitespace value is
+//     treated as absent. Longer than maxQueryLen is truncated.
+//   - sort:  passed through verbatim; the model whitelist (SortColumn) maps it
+//     to a safe column and falls back to id for unknown values.
+//   - order: passed through verbatim; the model whitelist (Direction) maps it
+//     to ASC/DESC and falls back to asc for unknown values.
+//
+// Keeping validation in the model helpers means the handler never has to know
+// the safe SQL literals.
+func parseUserFilter(r *http.Request) model.UserFilter {
+	q := r.URL.Query()
+
+	query := strings.TrimSpace(q.Get("q"))
+	if len(query) > maxQueryLen {
+		query = query[:maxQueryLen]
+	}
+
+	return model.UserFilter{
+		Query:  query,
+		SortBy: q.Get("sort"),
+		Order:  q.Get("order"),
+	}
 }
 
 // parsePositiveInt returns the parsed value when raw is a valid positive

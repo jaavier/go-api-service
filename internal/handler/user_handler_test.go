@@ -18,11 +18,13 @@ type mockLister struct {
 	total int
 	err   error
 
-	gotPage model.Page
+	gotPage   model.Page
+	gotFilter model.UserFilter
 }
 
-func (m *mockLister) ListPaginated(_ context.Context, page model.Page) ([]*model.User, int, error) {
+func (m *mockLister) ListPaginated(_ context.Context, page model.Page, filter model.UserFilter) ([]*model.User, int, error) {
 	m.gotPage = page
+	m.gotFilter = filter
 	if m.err != nil {
 		return nil, 0, m.err
 	}
@@ -154,5 +156,95 @@ func TestListUsers(t *testing.T) {
 				t.Errorf("store got page %+v, want {Number:%d Size:%d}", tt.lister.gotPage, tt.wantPage, tt.wantSize)
 			}
 		})
+	}
+}
+
+// TestListUsersFilter verifies that the handler parses the q/sort/order params
+// into a normalized model.UserFilter and forwards it to the store, including
+// the injection-defense fallbacks.
+func TestListUsersFilter(t *testing.T) {
+	tests := []struct {
+		name          string
+		url           string
+		wantQuery     string
+		wantSortCol   string
+		wantDirection string
+	}{
+		{
+			name:          "no filter keeps defaults",
+			url:           "/users",
+			wantQuery:     "",
+			wantSortCol:   "id",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "query passed through trimmed",
+			url:           "/users?q=ada",
+			wantQuery:     "ada",
+			wantSortCol:   "id",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "whitespace-only query ignored",
+			url:           "/users?q=%20%20",
+			wantQuery:     "",
+			wantSortCol:   "id",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "sort and order normalized",
+			url:           "/users?sort=email&order=desc",
+			wantQuery:     "",
+			wantSortCol:   "email",
+			wantDirection: "DESC",
+		},
+		{
+			name:          "injection attempt falls back to id asc",
+			url:           "/users?sort=drop%20table&order=weird",
+			wantQuery:     "",
+			wantSortCol:   "id",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "filter combines with pagination",
+			url:           "/users?q=lin&sort=name&order=asc&page=2&page_size=5",
+			wantQuery:     "lin",
+			wantSortCol:   "name",
+			wantDirection: "ASC",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lister := &mockLister{users: nil, total: 0}
+			h := newHandler(lister)
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+
+			h.List(w, req)
+
+			if got := lister.gotFilter.Query; got != tt.wantQuery {
+				t.Errorf("filter.Query = %q, want %q", got, tt.wantQuery)
+			}
+			if got := lister.gotFilter.SortColumn(); got != tt.wantSortCol {
+				t.Errorf("filter.SortColumn() = %q, want %q", got, tt.wantSortCol)
+			}
+			if got := lister.gotFilter.Direction(); got != tt.wantDirection {
+				t.Errorf("filter.Direction() = %q, want %q", got, tt.wantDirection)
+			}
+		})
+	}
+}
+
+// TestParseUserFilterQueryCap ensures overly long search terms are truncated.
+func TestParseUserFilterQueryCap(t *testing.T) {
+	long := make([]byte, maxQueryLen+50)
+	for i := range long {
+		long[i] = 'a'
+	}
+	req := httptest.NewRequest(http.MethodGet, "/users?q="+string(long), nil)
+	f := parseUserFilter(req)
+	if len(f.Query) != maxQueryLen {
+		t.Errorf("len(Query) = %d, want %d", len(f.Query), maxQueryLen)
 	}
 }
