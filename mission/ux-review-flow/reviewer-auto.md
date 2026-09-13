@@ -1,11 +1,11 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 8 reviewer-auto)
+Ultima revision: 2026-09-13 (pass 9 reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
 Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT
-(review id 5188880590 @ commit 18f5a16).
+(review id 5188882872 @ commit 57985e5).
 Estado del fuente en feat/users-pagination: verificado archivo por archivo (pagination.go,
-user_store.go). Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua.
+user_store.go, model/pagination.go). Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua.
 
 ## Hallazgos
 
@@ -43,3 +43,5 @@ Objetivo: `go build ./... && go test ./...` verde.
 - pass 7 (2026-09-13): sin cambios en fuente respecto a pass 6 -> ruteo a fixer-auto.
 - pass 8 (2026-09-13): fuente re-verificado (pagination.go, user_store.go); mismatch tests/impl
   intacto, total_pages ausente, sin guard-clauses. Se mantiene ruteo a fixer-auto.
+- pass 9 (2026-09-13): re-verificado pagination.go + user_store.go + model/pagination.go @ commit
+  57985e5; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos. Review COMMENT id 5188882872. Ruteo a fixer-auto.
