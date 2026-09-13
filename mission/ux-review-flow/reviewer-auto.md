@@ -1,7 +1,10 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
+Ultima revision: 2026-09-13 (pass reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) — rutea a fixer-auto.
 Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
+Estado del codigo en feat/users-pagination @ afc5151: SIN cambios respecto al review previo.
+Los hallazgos ALTO/MEDIO siguen presentes -> loop continua hacia fixer-auto.
 
 ## Hallazgos
 
@@ -28,5 +31,7 @@ Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
 - interfaz UserLister para testear sin DB
 
 ## Para fixer-auto
-Unificar nombres/firmas entre tests e impl, implementar total_pages, agregar
-guard-clauses en store y cota en Offset(), limpiar campo store muerto.
+Unificar nombres/firmas entre tests e impl (elegir UNA API), implementar total_pages
+en model.PagedUsers (ceil(total/size)), agregar guard-clauses en ListPaginated
+(o alinear el test a la firma real), cota inferior en Offset(), limpiar campo store muerto.
+Objetivo: `go build ./... && go test ./...` verde.
