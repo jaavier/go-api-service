@@ -1,0 +1,32 @@
+{
+  "mission": "ux-review-flow",
+  "agent": "reviewer-auto",
+  "owner": "jaavier",
+  "repo": "go-api-service",
+  "pr": 1,
+  "head_sha": "261c30f718702b71af1112380632959ddeabee9a",
+  "review_url": "https://github.com/jaavier/go-api-service/pull/1#pullrequestreview-5188504149",
+  "verdict": "findings",
+  "blocking_findings": [
+    {
+      "category": "concurrency",
+      "file": "internal/worker/processor_test.go",
+      "symbol": "TestRun",
+      "line": 103,
+      "summary": "Data race (aun presente en HEAD 261c30f): el slice `received` se escribe desde la goroutine interna que lanza Run (dentro de handle) sin sincronizacion. La unica relacion happens-before es close(done) en la 3a invocacion de handle; las escrituras 1 y 2 quedan sin relacion con ninguna lectura sincronizada. Ademas se descarta el *sync.WaitGroup devuelto por Run, por lo que el test no espera el fin real de la goroutine. `go test -race` (declarado obligatorio en el checklist del PR) lo marca y rompe el CI declarado.",
+      "suggested_fix": "Proteger `received` con sync.Mutex, o que handle empuje a un canal bufferizado y el test recolecte desde ahi; en ambos casos capturar el *sync.WaitGroup devuelto por Run y hacer wg.Wait() antes de leer received."
+    }
+  ],
+  "minor_findings": [
+    "TestRun descarta el *sync.WaitGroup devuelto por Run; usarlo elimina la dependencia de timing y de close(done).",
+    "TestRun_ContextCancel depende de time.Sleep para sincronizar; algo flaky bajo carga de CI (race benigno, acotado en el comentario)."
+  ],
+  "positive_notes": [
+    "Error wrapping con %w correcto end-to-end.",
+    "sql.ErrNoRows -> ErrNotFound -> 404; RowsAffected y rows.Err() chequeados; defer rows.Close().",
+    "Queries parametrizadas ($1/$2), sin SQL injection ni secretos hardcodeados; input validation en Create.",
+    "Pool configurado + PingContext + defer db.Close(); graceful shutdown en main.go con drenado de workers antes del db.Close().",
+    "Fix de wg.Add(1) antes del go y semaphore pattern en ProcessItems correctos."
+  ],
+  "note": "Re-review sobre HEAD 261c30f (artefacto previo apuntaba a 0f6d011). El hallazgo bloqueante de concurrencia NO fue corregido: sigue vivo en el HEAD actual. REQUEST_CHANGES no permitido en PR propio; review emitido como COMMENT con hallazgo bloqueante explicito. Ruteo: findings -> fixer."
+}
