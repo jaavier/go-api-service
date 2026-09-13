@@ -20,16 +20,30 @@ func NewUserHandler(s *store.UserStore) *UserHandler {
 	return &UserHandler{store: s}
 }
 
-// List returns all users.
-// BUG: no request context passed down, no error response body.
+// List returns a paginated page of users.
+//
+// Query params:
+//   - page:      1-based page number (default 1)
+//   - page_size: items per page (default 20, capped at 100)
+//
+// The response is a JSON envelope with the page slice plus pagination
+// metadata (page, page_size, total, total_pages). The request context is
+// propagated down to the store so the query is cancelled if the client
+// disconnects.
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
-	users, err := h.store.List()
+	p := parsePageParams(r)
+
+	users, total, err := h.store.ListPaginated(r.Context(), p.limit(), p.offset())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
+
+	resp := newPaginatedResponse(users, p, total)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(users) // BUG: encode error ignored
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, `{"error":"encoding error"}`, http.StatusInternalServerError)
+	}
 }
 
 // Get returns a single user.

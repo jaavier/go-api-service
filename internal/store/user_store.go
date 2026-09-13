@@ -37,6 +37,50 @@ func (s *UserStore) List() ([]*model.User, error) {
 	return users, nil // rows.Err() never checked
 }
 
+// ListPaginated fetches a single page of users ordered by id.
+//
+// It returns the slice of users for the requested page plus the total number
+// of rows in the table so callers can compute pagination metadata.
+//
+// The method is idiomatic: it propagates the caller's context, defers
+// rows.Close(), checks rows.Err() after iteration and wraps errors with %w.
+func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*model.User, int, error) {
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("list paginated: limit must be positive, got %d", limit)
+	}
+	if offset < 0 {
+		return nil, 0, fmt.Errorf("list paginated: offset must be non-negative, got %d", offset)
+	}
+
+	var total int
+	if err := s.Db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	rows, err := s.Db.QueryContext(ctx,
+		"SELECT id, name, email FROM users ORDER BY id LIMIT $1 OFFSET $2",
+		limit, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list paginated users: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]*model.User, 0, limit)
+	for rows.Next() {
+		u := &model.User{}
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return nil, 0, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate users: %w", err)
+	}
+
+	return users, total, nil
+}
+
 // GetByID fetches one user.
 // BUG: no context, error not wrapped.
 func (s *UserStore) GetByID(id int64) (*model.User, error) {
