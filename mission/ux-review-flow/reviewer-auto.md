@@ -1,10 +1,11 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 7 reviewer-auto)
+Ultima revision: 2026-09-13 (pass 8 reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
-Estado del codigo en feat/users-pagination @ ec38d2c: el HEAD es un commit SOLO-DOC
-(pass 6). Los archivos fuente NO cambiaron -> los hallazgos ALTO/MEDIO siguen -> loop continua.
+Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT
+(review id 5188880590 @ commit 18f5a16).
+Estado del fuente en feat/users-pagination: verificado archivo por archivo (pagination.go,
+user_store.go). Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua.
 
 ## Hallazgos
 
@@ -33,10 +34,12 @@ Estado del codigo en feat/users-pagination @ ec38d2c: el HEAD es un commit SOLO-
 ## Para fixer-auto
 Unificar nombres/firmas entre tests e impl (elegir UNA API), implementar total_pages
 en model.PagedUsers (ceil(total/size), 0 si total==0), agregar guard-clauses en
-ListPaginated (limit>0 / Size>0, offset>=0) o alinear el test a la firma real, cota inferior
+ListPaginated (Size>0, offset>=0) o alinear el test a la firma real, cota inferior
 en Offset() (no negativo), limpiar campo store muerto.
 Objetivo: `go build ./... && go test ./...` verde.
 
 ## Historial de passes
 - pass 1-6: mismos hallazgos, sin correccion. Commits de doc no tocan el fuente.
-- pass 7 (2026-09-13): sin cambios en fuente respecto a pass 6 -> se mantiene el ruteo a fixer-auto.
+- pass 7 (2026-09-13): sin cambios en fuente respecto a pass 6 -> ruteo a fixer-auto.
+- pass 8 (2026-09-13): fuente re-verificado (pagination.go, user_store.go); mismatch tests/impl
+  intacto, total_pages ausente, sin guard-clauses. Se mantiene ruteo a fixer-auto.
