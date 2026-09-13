@@ -91,6 +91,79 @@ curl -i "http://localhost:8080/users/999999"
 curl -i "http://localhost:8080/users/abc"
 ```
 
+### POST /users
+Creates a new user. The request body is a JSON object with `name` and `email`;
+both are required and must be non-blank (surrounding whitespace is ignored). On
+success the store assigns the generated `id`, which is echoed back in the
+response.
+
+The request context is propagated end-to-end to the database query, so client
+cancellations and deadlines reach the store.
+
+Responses:
+
+| status | body                                          | when                                    |
+|--------|-----------------------------------------------|-----------------------------------------|
+| `201`  | the created user as JSON (with `id`)          | the user was inserted                   |
+| `400`  | `{"error":"invalid body"}`                    | the request body is not valid JSON      |
+| `400`  | `{"error":"name and email are required"}`     | `name` or `email` is missing/blank      |
+| `500`  | `{"error":"internal error"}`                  | any other store/database failure        |
+
+Request body:
+```json
+{ "name": "Ada", "email": "ada@example.com" }
+```
+
+Success body (`201 Created`):
+```json
+{ "id": 42, "name": "Ada", "email": "ada@example.com" }
+```
+
+Examples:
+```bash
+# create a user -> 201 with the assigned id
+curl -i -X POST "http://localhost:8080/users" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Ada","email":"ada@example.com"}'
+
+# malformed JSON -> 400 {"error":"invalid body"}
+curl -i -X POST "http://localhost:8080/users" \
+  -H 'Content-Type: application/json' \
+  -d '{not json'
+
+# missing fields -> 400 {"error":"name and email are required"}
+curl -i -X POST "http://localhost:8080/users" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"","email":""}'
+```
+
+### DELETE /users/{id}
+Deletes a user by id.
+
+The request context is propagated end-to-end to the database query, so client
+cancellations and deadlines reach the store.
+
+Responses:
+
+| status | body                              | when                                  |
+|--------|-----------------------------------|---------------------------------------|
+| `204`  | (empty)                           | the user was deleted                  |
+| `400`  | `{"error":"invalid id"}`          | the path id is not a valid integer    |
+| `404`  | `{"error":"user not found"}`      | no user has that id                   |
+| `500`  | `{"error":"internal error"}`      | any other store/database failure      |
+
+Examples:
+```bash
+# delete an existing user -> 204 No Content
+curl -i -X DELETE "http://localhost:8080/users/7"
+
+# unknown id -> 404 with a JSON error envelope
+curl -i -X DELETE "http://localhost:8080/users/999999"
+
+# invalid id -> 400 with a JSON error envelope
+curl -i -X DELETE "http://localhost:8080/users/abc"
+```
+
 ## Testing
 ```bash
 make test
