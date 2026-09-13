@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/jaavier/go-api-service/internal/handler"
@@ -19,8 +20,10 @@ func main() {
 
 	userStore := store.NewUserStore(db)
 	userHandler := handler.NewUserHandler(userStore)
+	healthHandler := handler.NewHealthHandler(db, 2*time.Second)
 
 	r := mux.NewRouter()
+	r.HandleFunc("/healthz", healthHandler.Check).Methods("GET")
 	r.HandleFunc("/users", userHandler.List).Methods("GET")
 	r.HandleFunc("/users/{id}", userHandler.Get).Methods("GET")
 	r.HandleFunc("/users", userHandler.Create).Methods("POST")
