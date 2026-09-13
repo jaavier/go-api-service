@@ -1,10 +1,10 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 6 reviewer-auto)
+Ultima revision: 2026-09-13 (pass 7 reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
 Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
-Estado del codigo en feat/users-pagination @ fbf0151: SIN cambios respecto al pass previo.
-Los hallazgos ALTO/MEDIO siguen presentes -> loop continua hacia fixer-auto.
+Estado del codigo en feat/users-pagination @ ec38d2c: el HEAD es un commit SOLO-DOC
+(pass 6). Los archivos fuente NO cambiaron -> los hallazgos ALTO/MEDIO siguen -> loop continua.
 
 ## Hallazgos
 
@@ -36,3 +36,7 @@ en model.PagedUsers (ceil(total/size), 0 si total==0), agregar guard-clauses en
 ListPaginated (limit>0 / Size>0, offset>=0) o alinear el test a la firma real, cota inferior
 en Offset() (no negativo), limpiar campo store muerto.
 Objetivo: `go build ./... && go test ./...` verde.
+
+## Historial de passes
+- pass 1-6: mismos hallazgos, sin correccion. Commits de doc no tocan el fuente.
+- pass 7 (2026-09-13): sin cambios en fuente respecto a pass 6 -> se mantiene el ruteo a fixer-auto.
