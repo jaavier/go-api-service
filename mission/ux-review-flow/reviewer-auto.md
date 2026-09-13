@@ -1,46 +1,52 @@
-# reviewer-auto — Review de PR #6
+# reviewer-auto — Review de PR #7
 
-- **Repo:** jaavier/go-api-service
-- **PR:** #6 — `feat: proper 404 + context propagation for GET /users/{id}`
-- **Head:** `feat/get-user-404-context`  →  **Base:** `main`
-- **Fecha:** 2026-09-13
-- **Veredicto:** ✅ APPROVE (sin hallazgos alto/medio)
+**Repo:** jaavier/go-api-service
+**PR:** #7 — `feat: correct write-path for POST /users and DELETE /users/{id}`
+**Head:** `feat/users-write-path` → **Base:** `main`
+**Fecha:** 2026-09-13
+**Decisión:** ✅ APPROVE (sin hallazgos alto/medio)
 
-## Alcance del diff
-| Archivo | Cambio |
-|---------|--------|
-| `internal/store/user_store.go` | `ErrNotFound` centinela; `GetByID(ctx, id)` con `QueryRowContext`, distingue `sql.ErrNoRows`, wrap `%w`. |
-| `internal/handler/user_handler.go` | Interfaz `UserGetter`; `Get` propaga `r.Context()`, mapea 400/404/500 vía `writeJSON*`. |
-| `internal/handler/user_get_test.go` | Tests table-driven con mock: 200/404/500/400 + Content-Type + ctx. |
-| `README.md` | Contrato documentado de `GET /users/{id}`. |
+## Alcance revisado
+- `internal/store/user_store.go` (Create / DeleteByID)
+- `internal/handler/user_handler.go` (Create / Delete + interfaces)
+- `internal/handler/user_create_test.go` (nuevo)
+- `internal/handler/user_delete_test.go` (nuevo)
+- `README.md` (docs de endpoints)
 
 ## Análisis por categoría
 
-### Bugs / lógica — OK
-- Se corrige el bug real declarado: `sql.ErrNoRows` ahora → **404** (antes **500**). Mapeo con `errors.Is(err, store.ErrNotFound)`: correcto.
-- Parseo de id inválido → **400** `{"error":"invalid id"}` antes de tocar el store. Correcto.
+### Bugs / lógica
+Sin hallazgos. Los `// BUG:` originales del write-path fueron resueltos:
+- `Create` ahora captura el id generado con `QueryRowContext(... RETURNING id).Scan(&u.ID)`.
+- `DeleteByID` inspecciona `RowsAffected()` y devuelve `ErrNotFound` cuando es 0 (antes era no-op silencioso).
 
-### Seguridad — OK
-- `GetByID` usa query parametrizada (`$1`), sin concatenación. Sin inyección.
-- No hay secretos ni paths.
+### Seguridad
+Sin hallazgos. Todas las queries del write-path usan parámetros vinculados (`$1`, `$2`); sin concatenación de input. No hay secretos ni path traversal.
 
-### Manejo de errores — OK
-- No se tragan errores: not-found vs genérico bien separados; wrap con `%w` preserva la cadena para `errors.Is/As`.
+### Manejo de errores
+Correcto. Errores envueltos con `%w` (`store: create user: %w`, `store: delete user %d: %w`). El handler distingue 404 (`errors.Is(err, store.ErrNotFound)`) de 500. Envelopes JSON consistentes vía `writeJSONError`.
 
-### Recursos / concurrencia — OK
-- `QueryRowContext` no requiere `Close` explícito (Scan libera). Sin goroutines nuevas ni locks.
+### Recursos
+Correcto. `defer r.Body.Close()` en `Create`. `QueryRowContext`/`ExecContext` no dejan `*sql.Rows` abiertos.
 
-### Semántica HTTP — OK
-- 200/400/404/500 coherentes con README. `writeJSON`/`writeJSONError` setean `Content-Type: application/json` y status. Unifica el shape JSON de error.
+### Concurrencia
+Sin código concurrente nuevo. Sin races.
 
-### Tests — OK
-- Cubre los 4 caminos del contrato, verifica status, Content-Type y propagación de contexto. Usa `UserHandler{getter: g}` (campo no exportado, mismo paquete) — compila.
+### Semántica HTTP / validación
+Correcta:
+- `POST /users`: 201 (con id), 400 invalid body, 400 required (validación con `TrimSpace`), 500.
+- `DELETE /users/{id}`: 204 (sin body), 400 invalid id, 404 not found, 500.
+- Context propagado end-to-end (`r.Context()` → store).
 
-### Compatibilidad — OK
-- `NewUserHandler(*store.UserStore)` sin cambios. Único cambio de firma: `UserStore.GetByID` (ahora requiere `ctx`); único caller interno (handler) actualizado.
+### Tests
+Sólidos y table-driven, sin DB (mocks `mockCreator`/`mockDeleter`). Cubren happy path, validación (store no llamado), 404, 500 y propagación de context. Coherentes con `NewUserHandler` (firma pública intacta).
 
-## Nits (severidad BAJA — no bloquean)
-- Quedan `// BUG:` preexistentes en `Db` exportado, `List`, `Create`, `Delete`. Están **fuera de scope** declarado del PR; no son regresiones de este diff.
+### Consistencia
+Helpers `writeJSON`/`writeJSONError` presentes; interfaces `UserCreator`/`UserDeleter` satisfechas por `*store.UserStore`; imports correctos (`strings`, `errors`, `strconv`). README alineado con el comportamiento real.
+
+## Notas (severidad BAJA, no bloqueantes)
+- `internal/store/user_store.go`: persisten `// BUG:` en el read-path (`List` sin context, `rows.Close()` no diferido, `%v` en vez de `%w`, `Db` exportado). Están **fuera del alcance** de este PR (documentado como write-path only, para no colisionar con PRs #1/#2). No bloquean.
+- Podría validarse formato de email en `Create` a futuro; hoy solo se exige no-blank, lo cual es aceptable para el contrato declarado.
 
 ## Conclusión
-El read-path de `GetByID` queda correcto de punta a punta. Sin hallazgos de severidad alta/media. **Listo para merge.**
+Ningún hallazgo de severidad alta o media. El PR resuelve correctamente el write-path con semántica HTTP adecuada, propagación de context, manejo de errores idiomático y tests representativos. **Listo para merge → approve.**
