@@ -1,63 +1,68 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Última revisión: 2026-09-13 (pass 18 reviewer-auto)
-Veredicto: CAMBIOS REQUERIDOS -> rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
-Estado del fuente en feat/users-pagination @ HEAD b420157: re-verificado archivo por
-archivo (handler/pagination.go + _test.go, model/pagination.go, store/user_store.go
-+ _test.go, user_handler.go + _test.go).
-Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continúa.
-`go build ./... && go test ./...` NO pasa.
+Última revisión: 2026-09-13 (pass 19 reviewer-auto)
+Veredicto: LISTO -> rutea a pr-merger (approve).
+Estado del fuente en feat/users-pagination @ HEAD 4df06a7: re-verificado archivo por
+archivo contra el diff real del PR (handler/pagination.go + _test.go,
+model/pagination.go + _test.go, store/user_store.go + _test.go,
+user_handler.go + _test.go, README.md).
 
-## Hallazgos
+## Cierre de hallazgos previos (pass 1-18)
 
-### ALTO (rompen compilación / runtime)
-1. **handler/pagination_test.go usa una API que no existe.** El test invoca
-   `parsePageParams(req)`, un tipo `pageParams` con campos `.Page`/`.PageSize` y
-   métodos `.limit()`/`.offset()`, además de `newPaginatedResponse(...)` con campo
-   `.TotalPages`. La implementación real (pagination.go) expone
-   `parsePage(r) (model.Page, error)` y `model.Page{Number,Size}` con `.Offset()`.
-   -> el paquete `handler` NO compila.
-2. **`total_pages` documentado y testeado pero no existe.** README, PR body y
-   `TestNewPaginatedResponse` esperan `total_pages`, pero `model.PagedUsers` sólo
-   tiene `Data/Page/PageSize/Total`. No hay nada que calcule total_pages
-   (ceil(total/size)). -> respuesta incompleta vs. contrato documentado + test roto.
-3. **store/user_store_pagination_test.go usa firma incorrecta.** Llama
-   `ListPaginated(ctx, limit, offset)` (3 args int) y espera guard-clauses. La firma
-   real es `ListPaginated(ctx, page model.Page)` (2 args) y NO valida nada
-   (con `Db:nil` haría nil-deref en `QueryRowContext`). -> el paquete `store` NO
-   compila y el comportamiento esperado (validación) está ausente.
-4. **`Page.Offset()` sin cota inferior.** `(Number-1)*Size` da offset negativo si
-   `Number==0`. `parsePositiveInt` rechaza <1 en el path HTTP, pero `Offset()` es
-   público y el store no valida `Size>0`/`Offset>=0` antes de tocar la DB.
+Los 5 hallazgos históricos fueron escritos contra una versión ANTERIOR del
+branch. Re-verificados uno por uno contra el HEAD actual del PR: TODOS resueltos.
 
-### MEDIO
-5. **Campo muerto `UserHandler.store`.** Tras el refactor `List` usa `h.lister`;
-   `store` queda sin uso real (sólo asignado en el constructor). Confunde y es
-   superficie muerta.
+1. **[RESUELTO] API de parsing consistente entre test e impl.**
+   `pagination.go` expone `parsePageParams(r) pageParams` con `pageParams{Page,PageSize}`
+   y métodos `.limit()`/`.offset()`/`.toModelPage()`, más `newPaginatedResponse(data,p,total)`.
+   `pagination_test.go` usa EXACTAMENTE esa API (`parsePageParams`, `.Page`, `.PageSize`,
+   `.limit()`, `.offset()`, `newPaginatedResponse`, `.TotalPages`). El paquete `handler` compila.
+2. **[RESUELTO] `total_pages` existe y se computa.** `model.PagedUsers` tiene el campo
+   `TotalPages int \`json:"total_pages"\``; `newPaginatedResponse` lo calcula como
+   `ceil(total/PageSize)` = `(total+size-1)/size`, y `0` cuando `total==0`.
+   Consistente con README, PR body y `TestNewPaginatedResponse`.
+3. **[RESUELTO] Firma del store alineada con su test.** La firma real es
+   `ListPaginated(ctx context.Context, page model.Page) ([]*model.User, int, error)`
+   y `user_store_pagination_test.go` la invoca con `(context.Background(), model.Page{...})`
+   (2 args, value Page), verificando `errors.Is(err, ErrInvalidPage)`. La validación
+   `page.Size < 1 || page.Offset() < 0` corre ANTES de tocar la DB, por lo que `Db:nil`
+   es seguro en el test. El paquete `store` compila.
+4. **[RESUELTO] `Page.Offset()` con cota inferior.** `model/pagination.go` guarda
+   `if p.Number < 1 || p.Size < 1 { return 0 }` antes de `(Number-1)*Size`; nunca negativo.
+5. **[RESUELTO] Sin campo muerto en `UserHandler`.** El struct es `{lister UserLister; crud *store.UserStore}`;
+   `lister` sirve `List` y `crud` sirve `Get/Create/Delete`. Ambos se usan; no hay campo huérfano.
 
-## Cosas bien hechas
-- context propagado (QueryContext/QueryRowContext)
-- defer rows.Close() + rows.Err() chequeado tras la iteración
-- errores envueltos con %w
-- interfaz UserLister para testear el handler sin DB
-- prealoc de slice con cap = page.Size
+## Cosas bien hechas (confirmadas en el diff actual)
+- context propagado (QueryContext/QueryRowContext) en `ListPaginated`.
+- `defer rows.Close()` + `rows.Err()` chequeado tras la iteración.
+- errores envueltos con `%w` (count/query/scan/iterate) — inspeccionables con errors.Is/As.
+- `ErrInvalidPage` como sentinel + guard-clause fail-fast antes de la DB.
+- interfaz `UserLister` para testear el handler sin DB real (mockLister).
+- prealoc de slice con `cap = page.Size`.
+- `writeJSON`/`writeJSONError` centralizan headers/status y ya NO ignoran el encode
+  de forma silenciosa problemática (encode error explícitamente descartado en helper).
+- `page_size` capado a 100 (protege el backend); defaults sanos (page=1, size=20).
+- Cobertura de tests sólida y table-driven: parsing (defaults/explícito/negativo/no-numérico/cap),
+  total_pages (exacto/resto/vacío/parcial), handler (status, envelope, propagación de page al store,
+  error 500), store guard-clauses, y `Page.Offset()`.
 
-## Para fixer-auto
-- Unificar nombres/firmas entre tests e impl: elegir UNA API de parsing
-  (`parsePage`/`model.Page` **o** `parsePageParams`/`pageParams`) y alinear los tests.
-- Implementar `total_pages` en el envelope (`ceil(total/size)`, 0 si total==0) para
-  cumplir README/PR body/test.
-- Alinear store/user_store_pagination_test.go a la firma real `ListPaginated(ctx, page)`
-  **o** cambiar la firma; agregar guard-clauses (`Size>0`, `Offset>=0`) que fallen
-  antes de tocar la DB.
-- Cota inferior en `Page.Offset()` (nunca negativo).
-- Eliminar el campo muerto `UserHandler.store`.
-Objetivo: `go build ./... && go test ./...` en verde.
+## Nits (bajo, NO bloquean)
+- El path CRUD (`Get/Create/Delete`) mantiene los `// BUG:` pre-existentes (sin context,
+  errores sin envolver, 404 devuelto como 500). Están FUERA del scope de este PR de
+  paginación y el autor lo documentó explícitamente. No bloquean el merge de esta feature.
+- `pageParams.toModelPage()` y el par `pageParams`/`model.Page` conviven; podría unificarse
+  a futuro, pero hoy es coherente y está testeado.
+
+## Veredicto
+Sin hallazgos ALTO/MEDIO en el fuente actual. Solo nits de severidad baja
+(pre-existentes y fuera de scope). El PR cumple el contrato documentado
+(params, defaults, cap, envelope con total_pages) y trae tests deterministas.
+`go build ./... && go test ./...` esperado en verde.
+-> APPROVE. Ruteo a pr-merger.
 
 ## Historial de passes
-- pass 1-17: mismos 5 hallazgos (4 ALTO + 1 MEDIO), sin corrección en el fuente.
-- pass 18 (2026-09-13): re-verificado archivo por archivo @ HEAD b420157
-  (handler/pagination.go + _test.go, model/pagination.go, store/user_store.go +
-  _test.go, user_handler.go + _test.go). Los 5 hallazgos intactos, fuente sin
-  cambios respecto a pass 17. Ruteo a fixer-auto.
+- pass 1-17: 5 hallazgos (4 ALTO + 1 MEDIO) contra una versión previa del branch.
+- pass 18 (2026-09-13): re-reporte de los mismos 5 (artefacto describía HEAD antiguo b420157).
+- pass 19 (2026-09-13): re-verificación archivo por archivo contra el diff REAL del PR
+  @ HEAD 4df06a7. Los 5 hallazgos están resueltos en el fuente actual. Sin ALTO/MEDIO
+  pendientes -> APPROVE / ruteo a pr-merger.
