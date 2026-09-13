@@ -1,12 +1,11 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 10 reviewer-auto)
+Ultima revision: 2026-09-13 (pass 11 reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT
-(review id 5188885078 @ commit a038002).
-Estado del fuente en feat/users-pagination: re-verificado archivo por archivo
-(handler/pagination.go, model/pagination.go, store/user_store.go). Los hallazgos
-ALTO/MEDIO SIGUEN sin corregir -> loop continua.
+Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT.
+Estado del fuente en feat/users-pagination @ HEAD 78f9fe0: re-verificado archivo
+por archivo (handler/pagination.go, model/pagination.go, store/user_store.go, +
+los dos _test.go). Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua.
 
 ## Hallazgos
 
@@ -42,10 +41,10 @@ Objetivo: `go build ./... && go test ./...` verde.
 ## Historial de passes
 - pass 1-6: mismos hallazgos, sin correccion. Commits de doc no tocan el fuente.
 - pass 7 (2026-09-13): sin cambios en fuente respecto a pass 6 -> ruteo a fixer-auto.
-- pass 8 (2026-09-13): fuente re-verificado (pagination.go, user_store.go); mismatch tests/impl
-  intacto, total_pages ausente, sin guard-clauses. Se mantiene ruteo a fixer-auto.
-- pass 9 (2026-09-13): re-verificado pagination.go + user_store.go + model/pagination.go @ commit
-  57985e5; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos. Review COMMENT id 5188882872. Ruteo a fixer-auto.
-- pass 10 (2026-09-13): re-verificado handler/pagination.go + model/pagination.go + store/user_store.go
-  @ commit a038002; los 5 hallazgos (4 ALTO + 1 MEDIO) intactos, fuente sin cambios. Review COMMENT
-  id 5188885078. Ruteo a fixer-auto.
+- pass 8 (2026-09-13): fuente re-verificado; mismatch tests/impl intacto, total_pages
+  ausente, sin guard-clauses. Se mantiene ruteo a fixer-auto.
+- pass 9 (2026-09-13): re-verificado @ commit 57985e5; 5 hallazgos intactos. Review COMMENT 5188882872.
+- pass 10 (2026-09-13): re-verificado @ commit a038002; 5 hallazgos intactos. Review COMMENT 5188885078.
+- pass 11 (2026-09-13): re-verificado @ HEAD 78f9fe0 (handler/pagination.go, model/pagination.go,
+  store/user_store.go + ambos _test.go); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos, fuente sin
+  cambios. Ruteo a fixer-auto.
