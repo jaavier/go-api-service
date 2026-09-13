@@ -136,19 +136,40 @@ func (s *UserStore) GetByID(ctx context.Context, id int64) (*model.User, error) 
 	return u, nil
 }
 
-// Create inserts a new user.
-// BUG: no context, returns raw sql error, no input validation.
-func (s *UserStore) Create(u *model.User) error {
-	_, err := s.Db.Exec(
-		"INSERT INTO users (name, email) VALUES ($1, $2)",
+// Create inserts a new user and populates u.ID with the generated primary key.
+//
+// It propagates the request context to the database and wraps any failure with
+// %w so callers can inspect it with errors.Is/As. It uses QueryRowContext with
+// a RETURNING id clause so the generated id is captured in a single round-trip
+// and written back into u.ID.
+func (s *UserStore) Create(ctx context.Context, u *model.User) error {
+	err := s.Db.QueryRowContext(ctx,
+		"INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
 		u.Name, u.Email,
-	)
-	return err
+	).Scan(&u.ID)
+	if err != nil {
+		return fmt.Errorf("store: create user: %w", err)
+	}
+	return nil
 }
 
-// DeleteByID removes a user.
-// BUG: no context, doesn't check RowsAffected, silent no-op if id missing.
-func (s *UserStore) DeleteByID(id int64) error {
-	_, err := s.Db.Exec("DELETE FROM users WHERE id=$1", id)
-	return err
+// DeleteByID removes a user by id.
+//
+// It propagates the request context to the database and distinguishes the
+// not-found case: when no row is affected it returns ErrNotFound (so the caller
+// can answer HTTP 404), and any other failure is wrapped with %w for inspection
+// with errors.Is/As.
+func (s *UserStore) DeleteByID(ctx context.Context, id int64) error {
+	res, err := s.Db.ExecContext(ctx, "DELETE FROM users WHERE id=$1", id)
+	if err != nil {
+		return fmt.Errorf("store: delete user %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: delete user %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
