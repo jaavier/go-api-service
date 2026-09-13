@@ -37,36 +37,26 @@ func (s *UserStore) List() ([]*model.User, error) {
 	return users, nil // rows.Err() never checked
 }
 
-// ListPaginated fetches a single page of users ordered by id.
+// ListPaginated fetches a single page of users ordered by id, together with
+// the total number of users so callers can build pagination metadata.
 //
-// It returns the slice of users for the requested page plus the total number
-// of rows in the table so callers can compute pagination metadata.
-//
-// The method is idiomatic: it propagates the caller's context, defers
-// rows.Close(), checks rows.Err() after iteration and wraps errors with %w.
-func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*model.User, int, error) {
-	if limit <= 0 {
-		return nil, 0, fmt.Errorf("list paginated: limit must be positive, got %d", limit)
-	}
-	if offset < 0 {
-		return nil, 0, fmt.Errorf("list paginated: offset must be non-negative, got %d", offset)
-	}
-
-	var total int
+// It propagates the request context, defers rows.Close, checks rows.Err and
+// wraps errors with %w so callers can inspect them with errors.Is/As.
+func (s *UserStore) ListPaginated(ctx context.Context, page model.Page) (users []*model.User, total int, err error) {
 	if err := s.Db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count users: %w", err)
 	}
 
 	rows, err := s.Db.QueryContext(ctx,
 		"SELECT id, name, email FROM users ORDER BY id LIMIT $1 OFFSET $2",
-		limit, offset,
+		page.Size, page.Offset(),
 	)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list paginated users: %w", err)
+		return nil, 0, fmt.Errorf("list users page: %w", err)
 	}
 	defer rows.Close()
 
-	users := make([]*model.User, 0, limit)
+	users = make([]*model.User, 0, page.Size)
 	for rows.Next() {
 		u := &model.User{}
 		if err := rows.Scan(&u.ID, &u.Name, &u.Email); err != nil {
@@ -77,7 +67,6 @@ func (s *UserStore) ListPaginated(ctx context.Context, limit, offset int) ([]*mo
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("iterate users: %w", err)
 	}
-
 	return users, total, nil
 }
 

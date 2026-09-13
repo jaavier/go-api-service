@@ -1,54 +1,141 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/jaavier/go-api-service/internal/model"
 )
 
-// TestPaginatedResponse_JSONShape asserts the wire format of the paginated
-// envelope so clients relying on the field names stay compatible.
-//
-// The previous placeholder test called List on a handler with a nil store and
-// panicked; it is replaced here with a deterministic, dependency-free test.
-func TestPaginatedResponse_JSONShape(t *testing.T) {
-	users := []*model.User{
+// mockLister is a lightweight in-memory implementation of UserLister used to
+// exercise the handler without a real database.
+type mockLister struct {
+	users []*model.User
+	total int
+	err   error
+
+	gotPage model.Page
+}
+
+func (m *mockLister) ListPaginated(_ context.Context, page model.Page) ([]*model.User, int, error) {
+	m.gotPage = page
+	if m.err != nil {
+		return nil, 0, m.err
+	}
+	return m.users, m.total, nil
+}
+
+func newHandler(l UserLister) *UserHandler {
+	return &UserHandler{lister: l}
+}
+
+func TestListUsers(t *testing.T) {
+	sample := []*model.User{
 		{ID: 1, Name: "Ada", Email: "ada@example.com"},
-		{ID: 2, Name: "Alan", Email: "alan@example.com"},
-	}
-	p := pageParams{Page: 1, PageSize: 20}
-	resp := newPaginatedResponse(users, p, 2)
-
-	raw, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+		{ID: 2, Name: "Linus", Email: "linus@example.com"},
 	}
 
-	var decoded struct {
-		Data       []*model.User `json:"data"`
-		Page       int           `json:"page"`
-		PageSize   int           `json:"page_size"`
-		Total      int           `json:"total"`
-		TotalPages int           `json:"total_pages"`
-	}
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	tests := []struct {
+		name       string
+		url        string
+		lister     *mockLister
+		wantStatus int
+		wantPage   int
+		wantSize   int
+		wantTotal  int
+		wantLen    int
+	}{
+		{
+			name:       "defaults when no query params",
+			url:        "/users",
+			lister:     &mockLister{users: sample, total: 42},
+			wantStatus: http.StatusOK,
+			wantPage:   1,
+			wantSize:   20,
+			wantTotal:  42,
+			wantLen:    2,
+		},
+		{
+			name:       "explicit page and page_size",
+			url:        "/users?page=3&page_size=5",
+			lister:     &mockLister{users: sample, total: 42},
+			wantStatus: http.StatusOK,
+			wantPage:   3,
+			wantSize:   5,
+			wantTotal:  42,
+			wantLen:    2,
+		},
+		{
+			name:       "page_size capped at max",
+			url:        "/users?page_size=1000",
+			lister:     &mockLister{users: sample, total: 42},
+			wantStatus: http.StatusOK,
+			wantPage:   1,
+			wantSize:   maxPageSize,
+			wantTotal:  42,
+			wantLen:    2,
+		},
+		{
+			name:       "invalid page returns 400",
+			url:        "/users?page=abc",
+			lister:     &mockLister{users: sample, total: 42},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "zero page_size returns 400",
+			url:        "/users?page_size=0",
+			lister:     &mockLister{users: sample, total: 42},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "store error returns 500",
+			url:        "/users",
+			lister:     &mockLister{err: errors.New("boom")},
+			wantStatus: http.StatusInternalServerError,
+		},
 	}
 
-	if len(decoded.Data) != 2 {
-		t.Errorf("Data len = %d, want 2", len(decoded.Data))
-	}
-	if decoded.Page != 1 {
-		t.Errorf("Page = %d, want 1", decoded.Page)
-	}
-	if decoded.PageSize != 20 {
-		t.Errorf("PageSize = %d, want 20", decoded.PageSize)
-	}
-	if decoded.Total != 2 {
-		t.Errorf("Total = %d, want 2", decoded.Total)
-	}
-	if decoded.TotalPages != 1 {
-		t.Errorf("TotalPages = %d, want 1", decoded.TotalPages)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandler(tt.lister)
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+
+			h.List(w, req)
+
+			res := w.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tt.wantStatus)
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+
+			var got model.PagedUsers
+			if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got.Page != tt.wantPage {
+				t.Errorf("page = %d, want %d", got.Page, tt.wantPage)
+			}
+			if got.PageSize != tt.wantSize {
+				t.Errorf("page_size = %d, want %d", got.PageSize, tt.wantSize)
+			}
+			if got.Total != tt.wantTotal {
+				t.Errorf("total = %d, want %d", got.Total, tt.wantTotal)
+			}
+			if len(got.Data) != tt.wantLen {
+				t.Errorf("len(data) = %d, want %d", len(got.Data), tt.wantLen)
+			}
+			if tt.lister.gotPage.Number != tt.wantPage || tt.lister.gotPage.Size != tt.wantSize {
+				t.Errorf("store got page %+v, want {Number:%d Size:%d}", tt.lister.gotPage, tt.wantPage, tt.wantSize)
+			}
+		})
 	}
 }

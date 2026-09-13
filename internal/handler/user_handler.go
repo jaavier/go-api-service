@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -10,14 +12,24 @@ import (
 	"github.com/jaavier/go-api-service/internal/store"
 )
 
+// errInvalidPagination is returned when page/page_size query params are invalid.
+var errInvalidPagination = errors.New("invalid pagination parameters")
+
+// UserLister is the read dependency the handler needs to serve paginated lists.
+// Depending on an interface (rather than *store.UserStore) keeps the handler
+// testable with a lightweight mock.
+type UserLister interface {
+	ListPaginated(ctx context.Context, page model.Page) ([]*model.User, int, error)
+}
+
 // UserHandler handles HTTP requests for users.
-// BUG: depends on concrete *store.UserStore instead of an interface.
 type UserHandler struct {
-	store *store.UserStore
+	store  *store.UserStore
+	lister UserLister
 }
 
 func NewUserHandler(s *store.UserStore) *UserHandler {
-	return &UserHandler{store: s}
+	return &UserHandler{store: s, lister: s}
 }
 
 // List returns a paginated page of users.
@@ -26,24 +38,26 @@ func NewUserHandler(s *store.UserStore) *UserHandler {
 //   - page:      1-based page number (default 1)
 //   - page_size: items per page (default 20, capped at 100)
 //
-// The response is a JSON envelope with the page slice plus pagination
-// metadata (page, page_size, total, total_pages). The request context is
-// propagated down to the store so the query is cancelled if the client
-// disconnects.
+// Response: {"data":[...],"page":N,"page_size":M,"total":T}
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
-	p := parsePageParams(r)
-
-	users, total, err := h.store.ListPaginated(r.Context(), p.limit(), p.offset())
+	page, err := parsePage(r)
 	if err != nil {
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	resp := newPaginatedResponse(users, p, total)
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		http.Error(w, `{"error":"encoding error"}`, http.StatusInternalServerError)
+	users, total, err := h.lister.ListPaginated(r.Context(), page)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
 	}
+
+	writeJSON(w, http.StatusOK, model.PagedUsers{
+		Data:     users,
+		Page:     page.Number,
+		PageSize: page.Size,
+		Total:    total,
+	})
 }
 
 // Get returns a single user.
@@ -95,4 +109,14 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }
