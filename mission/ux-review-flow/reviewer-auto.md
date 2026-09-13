@@ -1,9 +1,9 @@
 # reviewer-auto — PR #4 (feat: add pagination to GET /users)
 
-Ultima revision: 2026-09-13 (pass 15 reviewer-auto)
+Ultima revision: 2026-09-13 (pass 16 reviewer-auto)
 Veredicto: CAMBIOS REQUERIDOS (request-changes efectivo) -> rutea a fixer-auto.
-Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT (id 5188896902).
-Estado del fuente en feat/users-pagination @ HEAD 6094f9a: re-verificado archivo por archivo
+Nota: GitHub rechaza REQUEST_CHANGES en PR propio; review posteado como COMMENT (id 5188903791).
+Estado del fuente en feat/users-pagination @ HEAD b43d007: re-verificado archivo por archivo
 (handler/pagination.go + _test.go, model/pagination.go, store/user_store.go + _test.go).
 Los hallazgos ALTO/MEDIO SIGUEN sin corregir -> loop continua. `go build ./... && go test ./...` NO pasa.
 
@@ -53,3 +53,6 @@ Objetivo: `go build ./... && go test ./...` verde.
 - pass 15 (2026-09-13): re-verificado archivo por archivo @ HEAD 6094f9a (handler/pagination.go + _test.go,
   model/pagination.go, store/user_store.go + _test.go); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
   fuente sin cambios respecto a pass 14. Review COMMENT 5188896902. Ruteo a fixer-auto.
+- pass 16 (2026-09-13): re-verificado archivo por archivo @ HEAD b43d007 (handler/pagination.go,
+  model/pagination.go, store/user_store.go + tests); los 5 hallazgos (4 ALTO + 1 MEDIO) intactos,
+  fuente sin cambios. Review COMMENT 5188903791. Ruteo a fixer-auto.
