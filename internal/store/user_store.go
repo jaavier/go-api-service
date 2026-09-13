@@ -13,6 +13,11 @@ import (
 // invalid size or a negative offset.
 var ErrInvalidPage = errors.New("invalid pagination: size must be > 0 and offset >= 0")
 
+// ErrNotFound is returned by read operations when the requested entity does not
+// exist. Callers should inspect it with errors.Is(err, store.ErrNotFound) and
+// map it to an HTTP 404 rather than a 500.
+var ErrNotFound = errors.New("user not found")
+
 // UserStore holds a db reference.
 type UserStore struct {
 	Db *sql.DB // BUG: exported field leaks implementation detail
@@ -112,14 +117,21 @@ func (s *UserStore) ListPaginated(ctx context.Context, page model.Page, filter m
 	return users, total, nil
 }
 
-// GetByID fetches one user.
-// BUG: no context, error not wrapped.
-func (s *UserStore) GetByID(id int64) (*model.User, error) {
+// GetByID fetches one user by id.
+//
+// It propagates the request context to the database and distinguishes the
+// not-found case: when the row does not exist it returns ErrNotFound (so the
+// caller can answer HTTP 404), and any other failure is wrapped with %w for
+// inspection with errors.Is/As.
+func (s *UserStore) GetByID(ctx context.Context, id int64) (*model.User, error) {
 	u := &model.User{}
-	err := s.Db.QueryRow("SELECT id, name, email FROM users WHERE id=$1", id).
+	err := s.Db.QueryRowContext(ctx, "SELECT id, name, email FROM users WHERE id=$1", id).
 		Scan(&u.ID, &u.Name, &u.Email)
 	if err != nil {
-		return nil, err // sql.ErrNoRows not distinguished
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("store: get user %d: %w", id, err)
 	}
 	return u, nil
 }

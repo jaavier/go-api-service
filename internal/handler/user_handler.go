@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -18,18 +19,27 @@ type UserLister interface {
 	ListPaginated(ctx context.Context, page model.Page, filter model.UserFilter) ([]*model.User, int, error)
 }
 
+// UserGetter is the read-by-id dependency for the Get endpoint. Depending on an
+// interface (rather than *store.UserStore) keeps the handler testable with a
+// lightweight mock. *store.UserStore satisfies it via its GetByID method.
+type UserGetter interface {
+	GetByID(ctx context.Context, id int64) (*model.User, error)
+}
+
 // UserHandler handles HTTP requests for users.
 //
 // lister serves the paginated List endpoint and can be a mock in tests.
-// crud is the concrete store used by Get/Create/Delete; it is nil in the
-// list-only handler tests, which never exercise those routes.
+// getter serves the Get endpoint and can be a mock in tests.
+// crud is the concrete store used by Create/Delete; it is nil in the
+// read-only handler tests, which never exercise those routes.
 type UserHandler struct {
 	lister UserLister
+	getter UserGetter
 	crud   *store.UserStore
 }
 
 func NewUserHandler(s *store.UserStore) *UserHandler {
-	return &UserHandler{lister: s, crud: s}
+	return &UserHandler{lister: s, getter: s, crud: s}
 }
 
 // List returns a paginated page of users.
@@ -58,22 +68,33 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, newPaginatedResponse(users, p, total))
 }
 
-// Get returns a single user.
-// BUG: sql.ErrNoRows mapped to 500 instead of 404.
+// Get returns a single user by id.
+//
+// Contract:
+//   - 200: the user as JSON.
+//   - 400: {"error":"invalid id"} when the path id is not a valid integer.
+//   - 404: {"error":"user not found"} when no user has that id.
+//   - 500: {"error":"internal error"} on any other store failure.
+//
+// The request context is propagated end-to-end to the store so cancellations
+// and deadlines reach the database query.
 func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
 	idStr := mux.Vars(r)["id"]
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	u, err := h.crud.GetByID(id)
+	u, err := h.getter.GetByID(r.Context(), id)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError) // 404 missing
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSONError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(u)
+	writeJSON(w, http.StatusOK, u)
 }
 
 // Create inserts a new user.

@@ -59,6 +59,38 @@ Response envelope:
 }
 ```
 
+### GET /users/{id}
+Returns a single user by id.
+
+The request context is propagated end-to-end to the database query, so client
+cancellations and deadlines reach the store.
+
+Responses:
+
+| status | body                              | when                                  |
+|--------|-----------------------------------|---------------------------------------|
+| `200`  | the user as JSON                  | a user with that id exists            |
+| `400`  | `{"error":"invalid id"}`          | the path id is not a valid integer    |
+| `404`  | `{"error":"user not found"}`      | no user has that id                   |
+| `500`  | `{"error":"internal error"}`      | any other store/database failure      |
+
+Success body:
+```json
+{ "id": 7, "name": "Ada", "email": "ada@example.com" }
+```
+
+Examples:
+```bash
+# fetch an existing user
+curl -i "http://localhost:8080/users/7"
+
+# unknown id -> 404 with a JSON error envelope
+curl -i "http://localhost:8080/users/999999"
+
+# invalid id -> 400 with a JSON error envelope
+curl -i "http://localhost:8080/users/abc"
+```
+
 ## Testing
 ```bash
 make test
